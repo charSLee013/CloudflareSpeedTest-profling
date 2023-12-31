@@ -73,16 +73,21 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 		bar_b += " "
 	}
 	bar := utils.NewBar(TestCount, bar_b, "")
+	ch := make(chan struct{}, 32)
 	for i := 0; i < testNum; i++ {
-		speed := downloadHandler(ipSet[i].IP)
-		ipSet[i].DownloadSpeed = speed
-		// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
-		if speed >= MinSpeed*1024*1024 {
-			bar.Grow(1, "")
-			speedSet = append(speedSet, ipSet[i]) // 高于下载速度下限时，添加到新数组中
-			if len(speedSet) == TestCount {       // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
-				break
+		ch <- struct{}{}
+		go func() {
+			speed := downloadHandler(ipSet[i].IP)
+			ipSet[i].DownloadSpeed = speed
+			<-ch
+			// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
+			if speed >= MinSpeed*1024*1024 {
+				bar.Grow(1, "")
+				speedSet = append(speedSet, ipSet[i])
 			}
+		}()
+		if len(speedSet) == TestCount { // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
+			break
 		}
 	}
 	bar.Done()
