@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/XIU2/CloudflareSpeedTest/utils"
@@ -22,6 +23,7 @@ const (
 	defaultDisableDownload         = false
 	defaultTestNum                 = 10
 	defaultMinSpeed        float64 = 0.0
+	defaultDownThreads             = 4
 )
 
 var (
@@ -29,8 +31,9 @@ var (
 	Timeout = defaultTimeout
 	Disable = defaultDisableDownload
 
-	TestCount = defaultTestNum
-	MinSpeed  = defaultMinSpeed
+	TestCount   = defaultTestNum
+	MinSpeed    = defaultMinSpeed
+	DownThreads = defaultDownThreads
 )
 
 func checkDownloadDefault() {
@@ -73,23 +76,29 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 		bar_b += " "
 	}
 	bar := utils.NewBar(TestCount, bar_b, "")
-	ch := make(chan struct{}, 32)
+	ch := make(chan struct{}, DownThreads)
+	wg := sync.WaitGroup{}
+
 	for i := 0; i < testNum; i++ {
 		ch <- struct{}{}
-		go func() {
-			speed := downloadHandler(ipSet[i].IP)
+		wg.Add(1)
+		go func(num int) {
+			speed := downloadHandler(ipSet[num].IP)
 			ipSet[i].DownloadSpeed = speed
 			<-ch
 			// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
 			if speed >= MinSpeed*1024*1024 {
 				bar.Grow(1, "")
-				speedSet = append(speedSet, ipSet[i])
+				speedSet = append(speedSet, ipSet[num])
 			}
-		}()
-		if len(speedSet) == TestCount { // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
+			wg.Done()
+		}(i)
+
+		if len(speedSet) >= TestCount { // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
 			break
 		}
 	}
+	wg.Wait()
 	bar.Done()
 	if len(speedSet) == 0 { // 没有符合速度限制的数据，返回所有测试数据
 		speedSet = utils.DownloadSpeedSet(ipSet)
