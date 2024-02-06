@@ -79,12 +79,15 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 	ch := make(chan struct{}, DownThreads)
 	wg := sync.WaitGroup{}
 
+	if testNum > len(ipSet) {
+		testNum = len(ipSet)
+	}
 	for i := 0; i < testNum; i++ {
 		ch <- struct{}{}
 		wg.Add(1)
 		go func(num int) {
 			speed := downloadHandler(ipSet[num].IP)
-			ipSet[i].DownloadSpeed = speed
+			ipSet[num].DownloadSpeed = speed
 			<-ch
 			// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
 			if speed >= MinSpeed*1024*1024 {
